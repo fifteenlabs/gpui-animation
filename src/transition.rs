@@ -204,7 +204,7 @@ impl TransitionRegistry {
 
             let still_animating = !registry.active_animations.is_empty();
             if changed && still_animating {
-                cx.update(|cx| cx.refresh_windows()).ok();
+                let _ = cx.update(|cx| cx.refresh_windows());
             }
 
             for (id, origin_duration, transition) in &completed {
@@ -240,7 +240,7 @@ impl TransitionRegistry {
             }
 
             if changed && !still_animating {
-                cx.update(|cx| cx.refresh_windows()).ok();
+                let _ = cx.update(|cx| cx.refresh_windows());
             }
 
             if registry.active_animations.is_empty() {
