@@ -386,6 +386,8 @@ impl Interpolatable for BoxShadow {
             offset: refine_interp!(self, other, offset, t),
             blur_radius: refine_interp!(self, other, blur_radius, t),
             spread_radius: refine_interp!(self, other, spread_radius, t),
+            // `inset` is a discrete flag, not interpolatable; keep the source value.
+            inset: self.inset,
         }
     }
 }
