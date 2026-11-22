@@ -62,6 +62,10 @@ pub(crate) struct TransitionRegistry {
     states: DashMap<ElementId, State<StyleRefinement>>,
     active_animations: DashMap<ElementId, ActiveAnimation>,
     saved_contexts: DashMap<ElementId, PersistentContext>,
+    /// The view each transitioned element was last rendered in, which is
+    /// notified on each frame of its transition, so that only that view is
+    /// drawn again rather than every window.
+    owners: DashMap<ElementId, EntityId>,
     wakeup_tx: Sender<()>,
     wakeup_rx: Receiver<()>,
 }
@@ -76,6 +80,7 @@ pub(crate) static TRANSITION_REGISTRY: LazyLock<TransitionRegistry> = LazyLock::
         states: DashMap::with_capacity_and_shard_amount(64, 4),
         active_animations: DashMap::with_capacity_and_shard_amount(32, 4),
         saved_contexts: DashMap::with_capacity_and_shard_amount(16, 4),
+        owners: DashMap::with_capacity_and_shard_amount(64, 4),
         wakeup_tx: tx,
         wakeup_rx: rx,
     }
@@ -90,6 +95,14 @@ impl TransitionRegistry {
 
         if !TRANSITION_REGISTRY.initialized.swap(true, Ordering::SeqCst) {
             cx.spawn(Self::animation_tick).detach();
+        }
+    }
+
+    /// Notes that the element `id` is drawn in the view `owner`, which its
+    /// transitions notify.
+    pub fn note_owner(id: ElementId, owner: EntityId) {
+        if TRANSITION_REGISTRY.owners.get(&id).as_deref() != Some(&owner) {
+            TRANSITION_REGISTRY.owners.insert(id, owner);
         }
     }
 
@@ -158,11 +171,13 @@ impl TransitionRegistry {
         let registry = &*TRANSITION_REGISTRY;
 
         let mut ids: Vec<ElementId> = Vec::with_capacity(32);
+        let mut notify: Vec<EntityId> = Vec::with_capacity(32);
         let mut completed: Vec<(ElementId, Duration, Arc<dyn Transition>)> = Vec::with_capacity(8);
 
         loop {
             ids.clear();
             completed.clear();
+            notify.clear();
 
             ids.extend(registry.active_animations.iter().map(|e| e.key().clone()));
 
@@ -179,6 +194,9 @@ impl TransitionRegistry {
                 };
 
                 changed = true;
+                if let Some(owner) = registry.owners.get(id) {
+                    notify.push(*owner);
+                }
 
                 let done = state.animated(
                     active.ver,
@@ -200,11 +218,6 @@ impl TransitionRegistry {
                     drop(state);
                     registry.active_animations.remove(id);
                 }
-            }
-
-            let still_animating = !registry.active_animations.is_empty();
-            if changed && still_animating {
-                let _ = cx.update(|cx| cx.refresh_windows());
             }
 
             for (id, origin_duration, transition) in &completed {
@@ -239,14 +252,20 @@ impl TransitionRegistry {
                 }
             }
 
-            if changed && !still_animating {
-                let _ = cx.update(|cx| cx.refresh_windows());
+            if changed {
+                notify.sort_unstable();
+                notify.dedup();
+                cx.update(|cx| {
+                    for owner in &notify {
+                        cx.notify(*owner);
+                    }
+                });
             }
 
             if registry.active_animations.is_empty() {
                 registry.wakeup_rx.recv().await.ok();
             } else {
-                smol::Timer::after(frame_duration).await;
+                cx.background_executor().timer(frame_duration).await;
             }
         }
     }
@@ -288,5 +307,6 @@ impl TransitionRegistry {
         TRANSITION_REGISTRY.states.remove(id);
         TRANSITION_REGISTRY.active_animations.remove(id);
         TRANSITION_REGISTRY.saved_contexts.remove(id);
+        TRANSITION_REGISTRY.owners.remove(id);
     }
 }
