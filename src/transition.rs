@@ -265,7 +265,7 @@ impl TransitionRegistry {
             if registry.active_animations.is_empty() {
                 registry.wakeup_rx.recv().await.ok();
             } else {
-                cx.background_executor().timer(frame_duration).await;
+                smol::Timer::after(frame_duration).await;
             }
         }
     }

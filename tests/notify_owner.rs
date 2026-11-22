@@ -21,7 +21,7 @@ impl Render for Inner {
             .bg(rgb(0x336699))
             .with_transition("transitioned")
             .transition_when(wide, Duration::from_secs(5), Linear, |state| {
-                state.w(px(100.))
+                state.bg(rgb(0x993366))
             })
     }
 }
@@ -70,8 +70,10 @@ fn a_transition_notifies_only_the_view_it_is_drawn_in() {
     outer_renders.set(0);
     inner_renders.set(0);
 
+    // The tick runs on smol's timer, in real time, as transitions measure
+    // their progress in real time too.
     for _ in 0..10 {
-        cx.executor().advance_clock(Duration::from_millis(9));
+        std::thread::sleep(Duration::from_millis(9));
         cx.run_until_parked();
     }
     assert!(
