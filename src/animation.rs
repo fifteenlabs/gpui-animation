@@ -342,6 +342,7 @@ impl<E: IntoElement + StatefulInteractiveElement + ParentElement + FluentBuilder
 {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         TransitionRegistry::init(window, cx);
+        TransitionRegistry::note_owner(self.id.clone(), window.current_view());
 
         let mut root = self.child;
 
